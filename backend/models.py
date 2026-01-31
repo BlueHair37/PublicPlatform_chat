@@ -42,7 +42,31 @@ class MockComplaint(Base):
     __tablename__ = "mock_complaints"
     
     id = Column(String, primary_key=True)
-    perception = Column(JSON)
-    plan = Column(JSON)
+    # Core Data
+    summary = Column(String)
+    original_text = Column(String)
+    location = Column(String)
+    category = Column(String)
+    
+    # 10+ AI Metrics
+    urgency_score = Column(Integer) # 1-10
+    safety_risk_score = Column(Integer) # 1-10
+    inconvenience_score = Column(Integer) # 1-10
+    visual_impact_score = Column(Integer) # 1-10
+    sentiment_score = Column(Integer) # 1-10 (User anger level)
+    
+    estimated_cost = Column(String) # Low, Medium, High
+    required_personnel = Column(String) # Estimate
+    legal_risk = Column(String) # Low, High
+    probability_of_escalation = Column(Integer) # %
+    department_in_charge = Column(String)
+    
     status = Column(String)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class DashboardStat(Base):
+    __tablename__ = "dashboard_stats"
+    
+    key = Column(String, primary_key=True)
+    value = Column(String)
+    description = Column(String)

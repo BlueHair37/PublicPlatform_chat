@@ -1,5 +1,5 @@
 from database import engine, SessionLocal, Base
-from models import WordCloudItem, ComplaintPattern, HighRiskComplaint, InsightData
+from models import WordCloudItem, ComplaintPattern, HighRiskComplaint, InsightData, DashboardStat
 
 def init_db():
     Base.metadata.create_all(bind=engine)
@@ -71,6 +71,14 @@ def init_db():
     </ul>
     """
     db.add(InsightData(content=insight_text))
+    
+    # 5. Dashboard Stats (General)
+    db.query(DashboardStat).delete()
+    db.add(DashboardStat(key="work_completion_rate", value="65", description="오늘의 AI 업무 추천 완료율"))
+    db.add(DashboardStat(key="avg_road_severity", value="88", description="평균 도로 파손 심각도"))
+    db.add(DashboardStat(key="pending_complaints_count", value="124", description="대기 중인 민원 건수 (선택 영역 예시)"))
+
+    db.commit()
 
     db.commit()
     db.close()

@@ -30,7 +30,13 @@ const InputArea = ({ onSendMessage }) => {
         navigator.geolocation.getCurrentPosition(
             (position) => {
                 const { latitude, longitude } = position.coords;
-                onSendMessage(`현재 위치 전송: ${latitude}, ${longitude}`);
+                // Send object with type 'location'
+                onSendMessage({
+                    type: 'location',
+                    content: `현재 위치 전송: ${latitude}, ${longitude}`, // Text for backend AI context
+                    lat: latitude,
+                    lng: longitude
+                });
             },
             (error) => {
                 console.error("Error getting location:", error);
@@ -46,16 +52,15 @@ const InputArea = ({ onSendMessage }) => {
     const handleFileChange = (e) => {
         const file = e.target.files[0];
         if (file) {
-            // For now, we'll simulate sending by passing a message. 
-            // Ideally, we'd handle file upload separately or pass the file object.
-            // We can assume the parent handles it if we pass a special format or object,
-            // but to keep signature simple strictly for this prompt's scope:
-            onSendMessage(`[사진 전송] ${file.name}`);
-
-            // Note: To fully implement photo upload properly, we would need to:
-            // 1. Upload to server first or convert to base64
-            // 2. Send the URL/base64 to the chat API
+            // Send object with type 'image'
+            onSendMessage({
+                type: 'image',
+                file: file,
+                content: "" // No text content for image message itself, or maybe "[사진]" for history?
+            });
         }
+        // Reset input so same file can be selected again if needed
+        e.target.value = '';
     };
 
     return (

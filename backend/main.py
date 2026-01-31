@@ -43,11 +43,6 @@ insight_agent = InsightAgent()
 chat_sessions: Dict[str, List[dict]] = {}
 
 # Models associated with Pydantic for response
-class ChatRequest(BaseModel):
-    message: str
-    image_url: Optional[str] = None
-    session_id: Optional[str] = "default"
-
 class ChatResponse(BaseModel):
     response: str
     action_taken: Optional[str] = None
@@ -121,6 +116,36 @@ def get_heatmap_data(db: Session = Depends(get_db)):
 
 # --- Chat Endpoint ---
 
+@app.get("/api/dashboard/stats/general")
+def get_general_stats(db: Session = Depends(get_db)):
+    stats = db.query(models.DashboardStat).all()
+    # Convert list to dict for easier frontend consumption
+    return {stat.key: stat.value for stat in stats}
+
+@app.post("/api/map/analyze")
+def analyze_area(db: Session = Depends(get_db)):
+    # In a real app, this would take coordinates and query spatial DB.
+    # For now, we return specific mock values stored in DB as requested.
+    severity = db.query(models.DashboardStat).filter(models.DashboardStat.key == "avg_road_severity").first()
+    count = db.query(models.DashboardStat).filter(models.DashboardStat.key == "pending_complaints_count").first()
+    
+    return {
+        "severity": int(severity.value) if severity else 80,
+        "count": int(count.value) if count else 100
+    }
+
+# --- Chat Endpoint ---
+
+class ChatRequest(BaseModel):
+    message: str
+    session_id: str = None
+    image_url: str = None # Legacy/Optional
+    image_data: str = None # Base64 encoded image
+
+# ... (Previous code) ...
+
+# --- Chat Endpoint ---
+
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
     session_id = request.session_id or "default"
@@ -128,22 +153,24 @@ async def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
     # Retrieve history
     history = chat_sessions.get(session_id, [])
     
-    # Prepend image context text if image_url exists
+    # Analyze Image if present (Prioritize base64 data)
+    image_input = request.image_data or request.image_url
+    
     message_content = request.message
-    if request.image_url:
-        message_content += f" (이미지 URL: {request.image_url})"
+    if image_input and not request.image_data: 
+         # If just URL (text), append it. If Base64, we pass it separately to agent.
+         message_content += f" (이미지 URL: {request.image_url})"
 
     # Chat with Boogie Agent
-    response_text, updated_history = await civil_agent.chat(message_content, history=history)
+    # Pass DB session for tools to use
+    response_text, updated_history = await civil_agent.chat(
+        message_content, 
+        history=history, 
+        db=db, 
+        image_data=request.image_data
+    )
     
-    # Store simple history for next context (Append new turn)
-    # Since updated_history contains everything, we could just replace, but to save memory we might want to prune.
-    # For now, simplistic approach: trust the agent returning appropriate messages.
-    # Wait, CivilComplaintAgent.chat logic was: messages = [system] + history + [user]. 
-    # It returns content and the Full Message List (including tools).
-    # We should update our session history to be everything AFTER the system prompt.
-    
-    # Extract only non-system messages
+    # Store history
     new_history = [msg for msg in updated_history if msg['role'] != 'system']
     chat_sessions[session_id] = new_history
     

@@ -1,6 +1,8 @@
 from agents.openai_service import get_openai_service
 import json
 import logging
+import uuid
+from models import MockComplaint
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -57,14 +59,28 @@ class CivilComplaintAgent:
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "complaint_type": {"type": "string", "description": "가로등, 도로파손, 쓰레기 등"},
-                            "severity_level": {"type": "integer", "description": "1에서 5 사이의 정수 (AI가 위험도 판단)"},
-                            "summary_standard": {"type": "string", "description": "방언을 제거한 표준어 요약본"},
-                            "is_urgent": {"type": "boolean", "description": "긴급 조치 필요 여부"},
+                            "summary": {"type": "string", "description": "민원 내용 요약 (표준어)"},
+                            "original_text": {"type": "string", "description": "사용자 원문"},
                             "location": {"type": "string", "description": "민원 발생 위치"},
-                            "original_text": {"type": "string", "description": "사용자 원문"}
+                            "category": {"type": "string", "description": "민원 카테고리 (교통, 환경, 안전 등)"},
+                            
+                            "urgency_score": {"type": "integer", "description": "조치 시급성 (1~10)"},
+                            "safety_risk_score": {"type": "integer", "description": "시민 안전 위협도 (1~10)"},
+                            "inconvenience_score": {"type": "integer", "description": "시민 불편도 (1~10)"},
+                            "visual_impact_score": {"type": "integer", "description": "도시 미관 저해 조도 (1~10)"},
+                            "sentiment_score": {"type": "integer", "description": "민원인의 감정 격앙 정도 (1~10)"},
+                            
+                            "estimated_cost": {"type": "string", "enum": ["Low", "Medium", "High"], "description": "예상 조치 비용"},
+                            "required_personnel": {"type": "string", "description": "필요 인력 및 장비 추정"},
+                            "legal_risk": {"type": "string", "enum": ["Low", "High"], "description": "법적 분쟁 가능성"},
+                            "probability_of_escalation": {"type": "integer", "description": "방치 시 문제 확산 확률 (%)"},
+                            "department_in_charge": {"type": "string", "description": "담당 부서 추천"}
                         },
-                        "required": ["complaint_type", "severity_level", "summary_standard", "is_urgent", "location"]
+                        "required": [
+                            "summary", "original_text", "location", "category",
+                            "urgency_score", "safety_risk_score", "inconvenience_score", 
+                            "department_in_charge"
+                        ]
                     }
                 }
             }
@@ -79,16 +95,59 @@ class CivilComplaintAgent:
         # In real app: RAG lookup from ChromaDB
         return "관련 규정에 따르면 도로 파손 신고 시 24시간 내 현장 확인이 원칙입니다."
 
-    def save_complaint_to_db(self, args):
-        # We will handle the actual DB insert in main.py or here via model interaction
-        # For agent flow, we return a success message
-        return json.dumps({"status": "success", "message": "민원이 정상적으로 시스템에 등록되었습니다."})
+    def save_complaint_to_db(self, args, db=None):
+        if not db:
+            return json.dumps({"status": "error", "message": "Database connection failed internally."})
+        
+        try:
+            # Create ID
+            c_id = str(uuid.uuid4())
+            
+            # Create/Map fields
+            complaint = MockComplaint(
+                id=c_id,
+                status="접수완료",
+                # Map specific fields from args
+                summary=args.get("summary"),
+                original_text=args.get("original_text"),
+                location=args.get("location"),
+                category=args.get("category"),
+                
+                urgency_score=args.get("urgency_score"),
+                safety_risk_score=args.get("safety_risk_score"),
+                inconvenience_score=args.get("inconvenience_score"),
+                visual_impact_score=args.get("visual_impact_score"),
+                sentiment_score=args.get("sentiment_score"),
+                
+                estimated_cost=args.get("estimated_cost"),
+                required_personnel=args.get("required_personnel"),
+                legal_risk=args.get("legal_risk"),
+                probability_of_escalation=args.get("probability_of_escalation"),
+                department_in_charge=args.get("department_in_charge")
+            )
+            
+            db.add(complaint)
+            db.commit()
+            
+            return json.dumps({"status": "success", "message": f"민원(ID: {c_id})이 정상적으로 시스템에 등록되었습니다. (위험도: {args.get('safety_risk_score')}/10)"})
+        except Exception as e:
+            logger.error(f"DB Save Error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
 
-    async def chat(self, user_message: str, history: list = []):
+    async def chat(self, user_message: str, history: list = [], db=None, image_data=None):
         # Build messages history
         messages = [{"role": "system", "content": self.system_prompt}]
         messages.extend(history)
-        messages.append({"role": "user", "content": user_message})
+        
+        # Handle Image Input for Vision API
+        if image_data:
+            content_payload = [
+                {"type": "text", "text": user_message or "이 사진의 문제를 분석해서 민원을 접수해줘."},
+                {"type": "image_url", "image_url": {"url": image_data}}
+            ]
+            messages.append({"role": "user", "content": content_payload})
+        else:
+            messages.append({"role": "user", "content": user_message})
 
         try:
             response_msg = await self.service.get_chat_response(messages, tools=self.tools)
@@ -98,8 +157,6 @@ class CivilComplaintAgent:
                 # Append assistant's function call request to history
                 messages.append(response_msg)
                 
-                tool_result_content = ""
-
                 for tool_call in response_msg.tool_calls:
                     function_name = tool_call.function.name
                     arguments = json.loads(tool_call.function.arguments)
@@ -111,8 +168,7 @@ class CivilComplaintAgent:
                     elif function_name == "search_admin_manual":
                         tool_output = self.search_admin_manual(arguments.get("keywords"))
                     elif function_name == "save_complaint_to_db":
-                        tool_output = self.save_complaint_to_db(arguments)
-                        # We might set a structured_data return here if we want to pass it up
+                        tool_output = self.save_complaint_to_db(arguments, db=db) # Pass DB session
                     
                     # Append tool execution result
                     messages.append({
@@ -125,13 +181,33 @@ class CivilComplaintAgent:
                 # Get final response after tool execution
                 final_response = await self.service.get_chat_response(messages)
                 
-                # Update history with the full interaction
-                history.append({"role": "user", "content": user_message})
-                history.append(final_response) # Simplified, should serialize
+                # Update history (Append User and Final Bot response)
+                if image_data:
+                     # Simplify history
+                     history.append({"role": "user", "content": f"[이미지 전송됨] {user_message}"})
+                else:
+                     history.append({"role": "user", "content": user_message})
+                     
+                history.append(final_response) 
                 
-                return final_response.content, messages
+                return final_response.content, [
+                    msg.model_dump() if hasattr(msg, "model_dump") else msg 
+                    for msg in messages
+                ]
             
-            return response_msg.content, messages
+            # Non-tool response
+            messages.append(response_msg)
+            
+            if image_data:
+                 history.append({"role": "user", "content": f"[이미지 전송됨] {user_message}"})
+            else:
+                 history.append({"role": "user", "content": user_message})
+            history.append(response_msg)
+
+            return response_msg.content, [
+                msg.model_dump() if hasattr(msg, "model_dump") else msg 
+                for msg in messages
+            ]
 
         except Exception as e:
             logger.error(f"Agent Chat Error: {e}")

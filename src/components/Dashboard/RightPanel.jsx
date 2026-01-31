@@ -1,7 +1,8 @@
 import React from 'react';
 
 const RightPanel = () => {
-    const [insight, setInsight] = React.useState("AI 분석 중...");
+    const [stats, setStats] = React.useState({ work_completion_rate: "65" });
+    const [insight, setInsight] = React.useState("데이터 분석 중...");
     const [patterns, setPatterns] = React.useState([]);
     const [highRiskItems, setHighRiskItems] = React.useState([]);
 
@@ -26,6 +27,12 @@ const RightPanel = () => {
             .then(res => res.json())
             .then(data => setHighRiskItems(data))
             .catch(err => console.error("Failed to fetch high-risk items:", err));
+
+        // Fetch general stats
+        fetch('http://localhost:8000/api/dashboard/stats/general')
+            .then(res => res.json())
+            .then(data => setStats(prev => ({ ...prev, ...data })))
+            .catch(err => console.error("Failed to fetch stats:", err));
     }, []);
 
     return (
@@ -94,10 +101,10 @@ const RightPanel = () => {
             <div className="p-6 border-t border-slate-100 dark:border-slate-800 space-y-3">
                 <div className="flex items-center justify-between mb-1">
                     <span className="text-[11px] text-slate-500 font-medium">오늘의 AI 업무 추천</span>
-                    <span className="text-[11px] text-primary font-bold">완료 65%</span>
+                    <span className="text-[11px] text-primary font-bold">완료 {stats.work_completion_rate}%</span>
                 </div>
                 <div className="h-2 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                    <div className="h-full bg-primary rounded-full w-[65%]"></div>
+                    <div className="h-full bg-primary rounded-full transition-all duration-1000" style={{ width: `${stats.work_completion_rate}%` }}></div>
                 </div>
             </div>
         </aside>

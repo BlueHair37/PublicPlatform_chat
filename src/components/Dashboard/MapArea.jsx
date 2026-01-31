@@ -142,6 +142,18 @@ const MapArea = () => {
         fetchAddress(center.lat, center.lng);
     };
 
+    const [analysisResult, setAnalysisResult] = useState({ severity: 0, count: 0 });
+
+    useEffect(() => {
+        if (selectionVisible) {
+            // Fetch analysis data (mock analysis from backend DB)
+            fetch('http://localhost:8000/api/map/analyze', { method: 'POST' })
+                .then(res => res.json())
+                .then(data => setAnalysisResult(data))
+                .catch(err => console.error("Analysis fetch error:", err));
+        }
+    }, [selectionVisible]);
+
     const handleCreated = (e) => {
         const type = e.layerType;
         const layer = e.layer;
@@ -241,15 +253,15 @@ const MapArea = () => {
                         <div>
                             <div className="flex justify-between text-[11px] mb-1">
                                 <span className="text-slate-500 font-medium">도로 파손 심각도</span>
-                                <span className="text-primary font-bold">88%</span>
+                                <span className="text-primary font-bold">{analysisResult.severity}%</span>
                             </div>
                             <div className="h-1.5 w-full bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
-                                <div className="h-full bg-primary rounded-full w-[88%]"></div>
+                                <div className="h-full bg-primary rounded-full" style={{ width: `${analysisResult.severity}%` }}></div>
                             </div>
                         </div>
                         <div className="flex items-center justify-between text-xs bg-slate-50 dark:bg-slate-700/50 p-2 rounded-lg">
                             <span className="text-slate-500">포함된 민원</span>
-                            <span className="font-bold">124건</span>
+                            <span className="font-bold">{analysisResult.count}건</span>
                         </div>
                         <button onClick={() => alert('상세 리포트 생성을 시작합니다.')} className="w-full py-2 bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-[11px] font-bold rounded-lg hover:opacity-90 transition-opacity">
                             AI 심층 분석 리포트 생성

@@ -1,19 +1,4 @@
-import { MapContainer, TileLayer, Marker } from 'react-leaflet';
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
-import icon from 'leaflet/dist/images/marker-icon.png';
-import iconShadow from 'leaflet/dist/images/marker-shadow.png';
-
-let DefaultIcon = L.icon({
-    iconUrl: icon,
-    shadowUrl: iconShadow,
-    iconSize: [25, 41],
-    iconAnchor: [12, 41]
-});
-
-// Avoid global prototype pollution if possible, or just re-assign locally for this component context if needed, 
-// but since main map uses it, it's likely already set globally. We'll ensure it here too just in case.
-L.Marker.prototype.options.icon = DefaultIcon;
+import React from 'react';
 
 const MessageBubble = ({ sender, text, timestamp, isFirstInGroup, type, imageFile, lat, lng }) => {
     const isBot = sender === 'bot';
@@ -21,8 +6,14 @@ const MessageBubble = ({ sender, text, timestamp, isFirstInGroup, type, imageFil
     // Create Object URL for image preview
     const imageUrl = React.useMemo(() => {
         if (imageFile) return URL.createObjectURL(imageFile);
-        return null;
+        return null; // Handle URL strings if passed as text later?
     }, [imageFile]);
+
+    // Parse text content for cleaner display?
+    // If type is image/location, we ignore 'text' generally if it's just metadata, 
+    // but sometimes text contains the message. 
+    // User requested: "Don't show filename". 
+    // We only show text if type='text' or if it's a bot message.
 
     return (
         <div className={`flex items-start gap-2.5 ${!isBot ? 'flex-row-reverse' : ''}`}>
@@ -48,41 +39,63 @@ const MessageBubble = ({ sender, text, timestamp, isFirstInGroup, type, imageFil
                 )}
 
                 {/* Message Content */}
-                <div
-                    className={`
-            overflow-hidden shadow-sm leading-relaxed text-[15px]
-            ${isBot
-                            ? 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-2xl rounded-tl-none border border-slate-100 dark:border-slate-700 p-3.5'
-                            : 'bg-primary text-white rounded-2xl rounded-tr-none shadow-md'
-                        }
-            ${(type === 'location' || type === 'image') ? 'p-1' : ''} 
-          `}
-                >
-                    {type === 'location' && lat && lng ? (
-                        <div className="w-[240px] h-[160px] rounded-xl overflow-hidden relative z-0">
-                            <MapContainer
-                                center={[lat, lng]}
-                                zoom={15}
-                                scrollWheelZoom={false}
-                                zoomControl={false}
-                                dragging={false}
-                                className="w-full h-full"
-                            >
-                                <TileLayer url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png" />
-                                <Marker position={[lat, lng]} />
-                            </MapContainer>
-                            <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-[10px] p-1 px-2">
-                                📍 {lat.toFixed(4)}, {lng.toFixed(4)}
+                {type === 'location' && lat && lng ? (
+                    <div className="bg-white dark:bg-slate-800 rounded-xl overflow-hidden shadow-md border border-slate-200 dark:border-slate-700 w-[240px]">
+                        {/* Title Area */}
+                        <div className="p-3 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 flex justify-between items-center">
+                            <div>
+                                <p className="text-sm font-bold text-slate-800 dark:text-slate-100">현재 위치</p>
+                                <p className="text-[10px] text-slate-500 truncate w-[140px]">{text || "부산광역시 어딘가"}</p>
+                            </div>
+                            <span className="material-symbols-outlined text-red-500 text-[20px]">location_on</span>
+                        </div>
+                        {/* Map Placeholder (Mock Visual) */}
+                        <div className="h-[140px] bg-slate-200 relative overflow-hidden group">
+                            {/* Mock Map Background Pattern */}
+                            <div className="absolute inset-0 bg-[#e8ecf1] opacity-60"
+                                style={{
+                                    backgroundImage: 'linear-gradient(#dbe0e6 1px, transparent 1px), linear-gradient(90deg, #dbe0e6 1px, transparent 1px)',
+                                    backgroundSize: '20px 20px'
+                                }}>
+                            </div>
+                            {/* Roads Mock */}
+                            <div className="absolute top-[30%] left-0 w-full h-[8px] bg-white border-y border-slate-300 transform -rotate-12"></div>
+                            <div className="absolute top-0 right-[30%] h-full w-[8px] bg-white border-x border-slate-300"></div>
+
+                            {/* Pin */}
+                            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 pb-8">
+                                <span className="material-symbols-outlined text-red-600 text-[40px] drop-shadow-md animate-bounce" style={{ animationDuration: '2s' }}>location_on</span>
                             </div>
                         </div>
-                    ) : type === 'image' && imageUrl ? (
-                        <div className="max-w-[240px] rounded-xl overflow-hidden">
-                            <img src={imageUrl} alt="Uploaded" className="w-full h-auto" />
-                        </div>
-                    ) : (
-                        <div dangerouslySetInnerHTML={{ __html: text }} />
-                    )}
-                </div>
+                        {/* Action Button */}
+                        <a
+                            href={`https://map.kakao.com/link/map/${lat},${lng}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="block w-full py-2.5 text-center text-[11px] font-bold text-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors bg-white dark:bg-slate-800"
+                        >
+                            카카오맵으로 크게 보기
+                        </a>
+                    </div>
+                ) : type === 'image' && imageUrl ? (
+                    <div className="rounded-xl overflow-hidden bg-white shadow-sm border border-slate-100 max-w-[240px]">
+                        <img src={imageUrl} alt="전송된 이미지" className="w-full h-auto object-cover" />
+                    </div>
+                ) : (
+                    <div
+                        className={`
+                            overflow-hidden shadow-sm leading-relaxed text-[15px]
+                            ${isBot
+                                ? 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-2xl rounded-tl-none border border-slate-100 dark:border-slate-700 p-3.5'
+                                : 'bg-primary text-white rounded-2xl rounded-tr-none shadow-md p-3'
+                            }
+                        `}
+                    >
+                        {type !== 'image' && type !== 'location' && (
+                            <div dangerouslySetInnerHTML={{ __html: text }} />
+                        )}
+                    </div>
+                )}
 
                 {/* Timestamp */}
                 {timestamp && (
