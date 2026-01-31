@@ -8,8 +8,7 @@ import uuid
 from pathlib import Path
 from dotenv import load_dotenv
 
-from agents.perception import PerceptionAgent
-from agents.planner import PlannerAgent
+from agents.civil_complaint import CivilComplaintAgent
 from agents.insight import InsightAgent
 from agents.openai_service import get_openai_service
 
@@ -37,9 +36,11 @@ app.add_middleware(
 )
 
 # Agents
-perception_agent = PerceptionAgent()
-planner_agent = PlannerAgent()
+civil_agent = CivilComplaintAgent()
 insight_agent = InsightAgent()
+
+# In-Memory Sessions (Simple cache for demo)
+chat_sessions: Dict[str, List[dict]] = {}
 
 # Models associated with Pydantic for response
 class ChatRequest(BaseModel):
@@ -96,50 +97,65 @@ async def get_stats(db: Session = Depends(get_db)):
         "categories": {"Road": total} # Simplified
     }
 
+# --- Heatmap Endpoint (New) ---
+@app.get("/api/map/heatmap")
+def get_heatmap_data(db: Session = Depends(get_db)):
+    # Mock/Seed Heatmap Data based on existing word cloud items or random
+    # Format: [[lat, lng, intensity], ...]
+    if False: # If we had real data
+        pass
+    
+    # Generate some static dummy data around Busan for heatmap demo
+    base_lat = 35.1796
+    base_lng = 129.0756
+    heatmap_data = [
+        [base_lat + 0.001, base_lng + 0.001, 0.8],
+        [base_lat - 0.002, base_lng - 0.001, 0.6],
+        [base_lat + 0.003, base_lng + 0.002, 0.9],
+        [base_lat + 0.001, base_lng - 0.003, 0.5],
+        [base_lat - 0.001, base_lng + 0.004, 0.7],
+        [35.155, 129.085, 0.8], # Gwangan
+        [35.165, 129.055, 0.6], # Seomyeon
+    ]
+    return heatmap_data
+
 # --- Chat Endpoint ---
 
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
-    # 1. Perception
-    perception_data = await perception_agent.process(request.message, request.image_url)
+    session_id = request.session_id or "default"
     
-    response_text = ""
-    action_taken = None
+    # Retrieve history
+    history = chat_sessions.get(session_id, [])
     
-    if perception_data.get("intent") == "report_complaint":
-        # 2. Planning
-        plan = await planner_agent.create_plan(perception_data)
-        
-        # 3. Save to DB
-        complaint_id = str(uuid.uuid4())
-        
-        db_complaint = models.MockComplaint(
-            id=complaint_id,
-            perception=perception_data,
-            plan=plan,
-            status="Received"
-        )
-        db.add(db_complaint)
-        db.commit()
-        
-        response_text = (
-            f"네, 접수되었습니다. <br/>"
-            f"<strong>[분류]</strong> {perception_data.get('category')} / <strong>[위치]</strong> {perception_data.get('location')} <br/>"
-            f"<strong>[담당]</strong> {plan.get('department')}에 배정되어 {plan.get('estimated_time')} 내 조치 예정입니다."
-        )
-        action_taken = "Complaint Registered"
-        
-    else:
-        # Simple conversation fallback
-        # Use OpenAI Service directly for chat if needed, or simple response
-        # Here we just acknowledge
-        response_text = "이해하였습니다. 더 도와드릴 것이 있나요?"
-        action_taken = "General Chat"
+    # Prepend image context text if image_url exists
+    message_content = request.message
+    if request.image_url:
+        message_content += f" (이미지 URL: {request.image_url})"
 
+    # Chat with Boogie Agent
+    response_text, updated_history = await civil_agent.chat(message_content, history=history)
+    
+    # Store simple history for next context (Append new turn)
+    # Since updated_history contains everything, we could just replace, but to save memory we might want to prune.
+    # For now, simplistic approach: trust the agent returning appropriate messages.
+    # Wait, CivilComplaintAgent.chat logic was: messages = [system] + history + [user]. 
+    # It returns content and the Full Message List (including tools).
+    # We should update our session history to be everything AFTER the system prompt.
+    
+    # Extract only non-system messages
+    new_history = [msg for msg in updated_history if msg['role'] != 'system']
+    chat_sessions[session_id] = new_history
+    
+    # Check for "Complaint Registered" action
+    action_taken = "General Chat"
+    if "민원이 정상적으로 시스템에 등록되었습니다" in response_text:
+        action_taken = "Complaint Registered"
+    
     return ChatResponse(
         response=response_text,
         action_taken=action_taken,
-        structured_data=perception_data
+        structured_data=None 
     )
 
 if __name__ == "__main__":

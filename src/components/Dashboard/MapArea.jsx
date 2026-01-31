@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents, Polygon, FeatureGroup } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, useMap, useMapEvents, FeatureGroup } from 'react-leaflet';
 import { EditControl } from "react-leaflet-draw";
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import 'leaflet-draw/dist/leaflet.draw.css';
+import 'leaflet.heat';
 
 // Fix for default marker icon missing in React-Leaflet/Vite
 import icon from 'leaflet/dist/images/marker-icon.png';
@@ -54,15 +55,47 @@ const ZoomController = ({ zoomInTrigger, zoomOutTrigger, flyToLocation }) => {
     return null;
 };
 
+const HeatmapLayer = ({ points }) => {
+    const map = useMap();
+
+    useEffect(() => {
+        if (!points || points.length === 0) return;
+
+        // Points format: [[lat, lng, intensity], ...]
+        const heat = L.heatLayer(points, {
+            radius: 25,
+            blur: 15,
+            maxZoom: 17,
+            gradient: {
+                0.4: 'blue',
+                0.6: 'cyan',
+                0.7: 'lime',
+                0.8: 'yellow',
+                1.0: 'red'
+            }
+        });
+
+        heat.addTo(map);
+
+        return () => {
+            map.removeLayer(heat);
+        };
+    }, [points, map]);
+
+    return null;
+};
+
 const MapArea = () => {
     const [selectionVisible, setSelectionVisible] = useState(false);
     const [zoomTrigger, setZoomTrigger] = useState({ in: 0, out: 0, reset: 0 });
     const [currentAddress, setCurrentAddress] = useState("부산광역시 연제구 (중심)");
     const [mapCenter, setMapCenter] = useState(DEFAULT_CENTER);
     const [wordCloudItems, setWordCloudItems] = useState([]);
+    const [heatmapData, setHeatmapData] = useState([]);
     const featureGroupRef = useRef();
 
     useEffect(() => {
+        // Fetch Word Cloud Items
         fetch('http://localhost:8000/api/map/items')
             .then(res => res.json())
             .then(data => {
@@ -76,6 +109,14 @@ const MapArea = () => {
                 setWordCloudItems(formattedItems);
             })
             .catch(err => console.error("Failed to fetch map items:", err));
+
+        // Fetch Heatmap Data
+        fetch('http://localhost:8000/api/map/heatmap')
+            .then(res => res.json())
+            .then(data => {
+                setHeatmapData(data);
+            })
+            .catch(err => console.error("Failed to fetch heatmap items:", err));
     }, []);
 
     const fetchAddress = async (lat, lng) => {
@@ -111,7 +152,7 @@ const MapArea = () => {
     };
 
     return (
-        <main className="relative flex-1 bg-slate-200 dark:bg-slate-950 overflow-hidden lasso-active z-0">
+        <main className="relative flex-1 bg-slate-200 dark:bg-slate-950 overflow-hidden z-0">
 
             <MapContainer
                 center={DEFAULT_CENTER}
@@ -131,6 +172,8 @@ const MapArea = () => {
                     zoomOutTrigger={zoomTrigger.out}
                     flyToLocation={zoomTrigger.reset}
                 />
+
+                <HeatmapLayer points={heatmapData} />
 
                 <FeatureGroup ref={featureGroupRef}>
                     <EditControl
