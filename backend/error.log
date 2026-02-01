@@ -1,0 +1,18 @@
+Traceback (most recent call last):
+  File "/Users/Kang/PublicPlatform_chat/backend/agents/civil_complaint.py", line 170, in chat
+    response_msg = await self.service.get_chat_response(messages, tools=self.tools)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/Kang/PublicPlatform_chat/backend/agents/openai_service.py", line 76, in get_chat_response
+    raise e
+  File "/Users/Kang/PublicPlatform_chat/backend/agents/openai_service.py", line 72, in get_chat_response
+    response = await self.client.chat.completions.create(**params)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/Kang/PublicPlatform_chat/backend/.venv/lib/python3.11/site-packages/openai/resources/chat/completions/completions.py", line 2678, in create
+    return await self._post(
+           ^^^^^^^^^^^^^^^^^
+  File "/Users/Kang/PublicPlatform_chat/backend/.venv/lib/python3.11/site-packages/openai/_base_client.py", line 1881, in post
+    return await self.request(cast_to, opts, stream=stream, stream_cls=stream_cls)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/Kang/PublicPlatform_chat/backend/.venv/lib/python3.11/site-packages/openai/_base_client.py", line 1666, in request
+    raise self._make_status_error_from_response(err.response) from None
+openai.BadRequestError: Error code: 400 - {'error': {'message': 'Invalid base64 image_url.', 'type': 'invalid_request_error', 'param': None, 'code': 'invalid_base64'}}

@@ -17,7 +17,7 @@ class OpenAIService:
             self.mock_mode = True
         else:
             self.client = AsyncOpenAI(api_key=self.api_key)
-            self.model = "gpt-4-turbo-preview"
+            self.model = "gpt-4o"
 
     async def get_chat_response(self, messages, tools=None, tool_choice=None, response_format=None):
         if self.mock_mode:

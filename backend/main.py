@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 
 from agents.civil_complaint import CivilComplaintAgent
 from agents.insight import InsightAgent
+from agents.context_analysis_agent import analysis_graph
 from agents.openai_service import get_openai_service
 
 from database import engine, get_db
@@ -56,8 +57,43 @@ def read_root():
 
 @app.get("/api/map/items")
 def get_map_items(db: Session = Depends(get_db)):
-    items = db.query(models.WordCloudItem).all()
-    return items
+    # 1. Static Word Cloud Items
+    static_items = db.query(models.WordCloudItem).all()
+    
+    # 2. Real-time Complaints (MockComplaint)
+    complaints = db.query(models.MockComplaint).all()
+    
+    formatted_complaints = []
+    for c in complaints:
+        if c.lat and c.lng:
+            # Determine style based on risk
+            is_risky = (c.safety_risk_score or 0) >= 8
+            
+            formatted_complaints.append({
+                "id": c.id,
+                "text": c.category or "민원",
+                "lat": c.lat,
+                "lng": c.lng,
+                "size": "3rem" if is_risky else "2rem",
+                "class_name": "text-red-600 font-black animate-pulse" if is_risky else "text-blue-600 font-bold",
+                "style": {"zIndex": 1000}
+            })
+            
+    # Combine (Schema mismatch handling moved to serializer or simple dict return)
+    # Since existing static_items are objects, we'll convert them to dicts to match formatted_complaints
+    result = []
+    for s in static_items:
+        result.append({
+            "text": s.text,
+            "lat": s.lat,
+            "lng": s.lng,
+            "size": s.size,
+            "class_name": s.class_name,
+            "style": s.style
+        })
+        
+    result.extend(formatted_complaints)
+    return result
 
 @app.get("/api/dashboard/patterns")
 def get_complaint_patterns(db: Session = Depends(get_db)):
@@ -66,8 +102,22 @@ def get_complaint_patterns(db: Session = Depends(get_db)):
 
 @app.get("/api/dashboard/high-risk")
 def get_high_risk_complaints(db: Session = Depends(get_db)):
-    items = db.query(models.HighRiskComplaint).all()
-    return items
+    # Fetch real data from Chat interactions (MockComplaint)
+    # Filter for high risk items (e.g., safety_risk_score >= 8)
+    items = db.query(models.MockComplaint).filter(models.MockComplaint.safety_risk_score >= 8).all()
+    
+    # Format for frontend
+    result = []
+    for item in items:
+        result.append({
+            "title": item.summary or "긴급 민원",
+            "time_text": "방금 전", # In real app, calculate time diff
+            "location": item.location,
+            "description": item.original_text[:50] + "..." if item.original_text else "",
+            "category": "warning" if (item.safety_risk_score or 0) >= 9 else "water_drop" # Simple icon logic
+        })
+        
+    return result
 
 @app.get("/api/dashboard/insight")
 async def get_insight(db: Session = Depends(get_db)):
@@ -83,14 +133,26 @@ async def get_insight(db: Session = Depends(get_db)):
 
 @app.get("/api/dashboard/stats")
 async def get_stats(db: Session = Depends(get_db)):
-    total = db.query(models.MockComplaint).count()
-    # Mock categories logic for now since MockComplaint structure in DB is JSON
-    # In a real app we would query the JSON field or a normalized table
-    return {
-        "active_complaints": total,
-        "resolved_today": 0,
-        "categories": {"Road": total} # Simplified
-    }
+    try:
+        total = db.query(models.MockComplaint).count()
+        # Basic category grouping logic
+        categories = {}
+        complaints = db.query(models.MockComplaint).all()
+        for c in complaints:
+            cat = c.category or "기타"
+            categories[cat] = categories.get(cat, 0) + 1
+            
+        return {
+            "active_complaints": total,
+            "resolved_today": 0,
+            "categories": categories or {"Road": 0} 
+        }
+    except Exception as e:
+        import traceback
+        with open("error.log", "a") as f:
+            f.write(f"Stats Error: {traceback.format_exc()}\n")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 # --- Heatmap Endpoint (New) ---
 @app.get("/api/map/heatmap")
@@ -132,6 +194,61 @@ def analyze_area(db: Session = Depends(get_db)):
     return {
         "severity": int(severity.value) if severity else 80,
         "count": int(count.value) if count else 100
+    }
+
+class RegionAnalysisRequest(BaseModel):
+    polygon: List[List[float]] # [[lat, lng], ...]
+
+@app.post("/api/map/analyze-region")
+async def analyze_region(request: RegionAnalysisRequest, db: Session = Depends(get_db)):
+    """
+    Stateful Analysis Endpoint (LangGraph)
+    """
+    initial_state = {
+        "region_polygon": request.polygon,
+        "db_session": db,
+        "raw_complaints": [],
+        "themes": {},
+        "semantic_context": "",
+        "final_report": "",
+        "action_items": []
+    }
+    
+    # Run Graph
+    try:
+        result = await analysis_graph.ainvoke(initial_state)
+        return {
+            "report": result.get("final_report", "Analysis Failed"),
+            "context": result.get("semantic_context", ""),
+            "themes": result.get("themes", {})
+        }
+    except Exception as e:
+        print(f"Graph Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/complaint/{complaint_id}/analyze")
+async def analyze_complaint_detail(complaint_id: str, db: Session = Depends(get_db)):
+    # Fetch complaint
+    complaint = db.query(models.MockComplaint).filter(models.MockComplaint.id == complaint_id).first()
+    if not complaint:
+        raise HTTPException(status_code=404, detail="Complaint not found")
+        
+    # Prepare data for AI
+    data = {
+        "summary": complaint.summary,
+        "original_text": complaint.original_text,
+        "category": complaint.category,
+        "location": complaint.location,
+        "urgency_score": complaint.urgency_score,
+        "safety_risk_score": complaint.safety_risk_score
+    }
+    
+    # Generate AI Report
+    analysis_text = await civil_agent.generate_report(data)
+    
+    return {
+        "complaint": data,
+        "analysis_report": analysis_text
     }
 
 # --- Chat Endpoint ---

@@ -1,19 +1,39 @@
-import React from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
+import { MapContainer, TileLayer, Marker, useMap } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import L from 'leaflet';
+
+// Fix for default Leaflet markers in React
+import icon from 'leaflet/dist/images/marker-icon.png';
+import iconShadow from 'leaflet/dist/images/marker-shadow.png';
+
+// Component to recenter map when coords change
+function ChangeView({ center }) {
+    const map = useMap();
+    map.setView(center);
+    return null;
+}
 
 const MessageBubble = ({ sender, text, timestamp, isFirstInGroup, type, imageFile, lat, lng }) => {
     const isBot = sender === 'bot';
+    const [previewUrl, setPreviewUrl] = useState(null);
 
-    // Create Object URL for image preview
-    const imageUrl = React.useMemo(() => {
-        if (imageFile) return URL.createObjectURL(imageFile);
-        return null; // Handle URL strings if passed as text later?
+    const customIcon = useMemo(() => {
+        return L.icon({
+            iconUrl: icon,
+            shadowUrl: iconShadow,
+            iconSize: [25, 41],
+            iconAnchor: [12, 41]
+        });
+    }, []);
+
+    useEffect(() => {
+        if (imageFile) {
+            const url = URL.createObjectURL(imageFile);
+            setPreviewUrl(url);
+            return () => URL.revokeObjectURL(url);
+        }
     }, [imageFile]);
-
-    // Parse text content for cleaner display?
-    // If type is image/location, we ignore 'text' generally if it's just metadata, 
-    // but sometimes text contains the message. 
-    // User requested: "Don't show filename". 
-    // We only show text if type='text' or if it's a bot message.
 
     return (
         <div className={`flex items-start gap-2.5 ${!isBot ? 'flex-row-reverse' : ''}`}>
@@ -40,46 +60,30 @@ const MessageBubble = ({ sender, text, timestamp, isFirstInGroup, type, imageFil
 
                 {/* Message Content */}
                 {type === 'location' && lat && lng ? (
-                    <div className="bg-white dark:bg-slate-800 rounded-xl overflow-hidden shadow-md border border-slate-200 dark:border-slate-700 w-[240px]">
-                        {/* Title Area */}
-                        <div className="p-3 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 flex justify-between items-center">
-                            <div>
-                                <p className="text-sm font-bold text-slate-800 dark:text-slate-100">현재 위치</p>
-                                <p className="text-[10px] text-slate-500 truncate w-[140px]">{text || "부산광역시 어딘가"}</p>
-                            </div>
-                            <span className="material-symbols-outlined text-red-500 text-[20px]">location_on</span>
-                        </div>
-                        {/* Map Placeholder (Mock Visual) */}
-                        <div className="h-[140px] bg-slate-200 relative overflow-hidden group">
-                            {/* Mock Map Background Pattern */}
-                            <div className="absolute inset-0 bg-[#e8ecf1] opacity-60"
-                                style={{
-                                    backgroundImage: 'linear-gradient(#dbe0e6 1px, transparent 1px), linear-gradient(90deg, #dbe0e6 1px, transparent 1px)',
-                                    backgroundSize: '20px 20px'
-                                }}>
-                            </div>
-                            {/* Roads Mock */}
-                            <div className="absolute top-[30%] left-0 w-full h-[8px] bg-white border-y border-slate-300 transform -rotate-12"></div>
-                            <div className="absolute top-0 right-[30%] h-full w-[8px] bg-white border-x border-slate-300"></div>
-
-                            {/* Pin */}
-                            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 pb-8">
-                                <span className="material-symbols-outlined text-red-600 text-[40px] drop-shadow-md animate-bounce" style={{ animationDuration: '2s' }}>location_on</span>
-                            </div>
-                        </div>
-                        {/* Action Button */}
-                        <a
-                            href={`https://map.kakao.com/link/map/${lat},${lng}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="block w-full py-2.5 text-center text-[11px] font-bold text-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors bg-white dark:bg-slate-800"
+                    <div className="bg-white dark:bg-slate-800 rounded-xl overflow-hidden shadow-md border border-slate-200 dark:border-slate-700 w-[240px] h-[200px] relative z-0">
+                        <MapContainer
+                            center={[lat, lng]}
+                            zoom={16}
+                            scrollWheelZoom={false}
+                            zoomControl={false}
+                            className="w-full h-full"
                         >
-                            카카오맵으로 크게 보기
-                        </a>
+                            <ChangeView center={[lat, lng]} />
+                            <TileLayer
+                                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                            />
+                            <Marker position={[lat, lng]} icon={customIcon} />
+                        </MapContainer>
                     </div>
-                ) : type === 'image' && imageUrl ? (
-                    <div className="rounded-xl overflow-hidden bg-white shadow-sm border border-slate-100 max-w-[240px]">
-                        <img src={imageUrl} alt="전송된 이미지" className="w-full h-auto object-cover" />
+                ) : type === 'image' && previewUrl ? (
+                    <div className="rounded-xl overflow-hidden bg-white shadow-sm border border-slate-100 max-w-[240px] min-h-[100px] bg-slate-100 flex items-center justify-center">
+                        {/* Min height ensures it doesn't look broken while loading */}
+                        <img
+                            src={previewUrl}
+                            alt="전송된 이미지"
+                            className="w-full h-auto object-cover block"
+                        />
                     </div>
                 ) : (
                     <div

@@ -46,6 +46,8 @@ class MockComplaint(Base):
     summary = Column(String)
     original_text = Column(String)
     location = Column(String)
+    lat = Column(Float, nullable=True) # New: For Map
+    lng = Column(Float, nullable=True) # New: For Map
     category = Column(String)
     
     # 10+ AI Metrics

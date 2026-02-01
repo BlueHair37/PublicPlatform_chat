@@ -6,14 +6,14 @@ const RightPanel = () => {
     const [patterns, setPatterns] = React.useState([]);
     const [highRiskItems, setHighRiskItems] = React.useState([]);
 
-    React.useEffect(() => {
+    const fetchData = () => {
         // Fetch real insight
         fetch('http://localhost:8000/api/dashboard/insight')
             .then(res => res.json())
             .then(data => setInsight(data.summary))
             .catch(err => {
                 console.error(err);
-                setInsight("데이터 연결 실패 (데모 모드: AI가 실시간 데이터를 분석 중입니다...)");
+                if (!insight) setInsight("데이터 연결 실패 (데모 모드: AI가 실시간 데이터를 분석 중입니다...)");
             });
 
         // Fetch patterns
@@ -33,6 +33,12 @@ const RightPanel = () => {
             .then(res => res.json())
             .then(data => setStats(prev => ({ ...prev, ...data })))
             .catch(err => console.error("Failed to fetch stats:", err));
+    };
+
+    React.useEffect(() => {
+        fetchData(); // Initial usage
+        const interval = setInterval(fetchData, 5000); // Poll every 5 seconds
+        return () => clearInterval(interval);
     }, []);
 
     return (
